@@ -32,10 +32,28 @@ def get_calendar_service():
 def add_events(events: list) -> tuple[int, list]:
     service = get_calendar_service()
     added = 0
+    skipped = 0
     failed = []
 
     for event in events:
         try:
+            # check if something already exists at that exact time
+            existing = (
+                service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=f"{event['date']}T{event['start_time']}:00Z",
+                    timeMax=f"{event['date']}T{event['end_time']}:00Z",
+                    singleEvents=True,
+                )
+                .execute()
+            )
+
+            if existing.get("items"):
+                logger.info(f"Skipped (time slot taken): {event.get('title')}")
+                skipped += 1
+                continue
+
             body = {
                 "summary": event.get("title", "Untitled"),
                 "description": event.get("description", ""),
@@ -56,7 +74,7 @@ def add_events(events: list) -> tuple[int, list]:
             logger.error(f"Failed to add {event.get('title')}: {e}")
             failed.append(event.get("title", "Untitled"))
 
-    return added, failed
+    return added, skipped, failed
 
 
 def delete_events(events: list) -> tuple[int, int]:
@@ -68,13 +86,17 @@ def delete_events(events: list) -> tuple[int, int]:
         try:
             date = event["date"]
             # search the whole day for a matching event title
-            results = service.events().list(
-                calendarId="primary",
-                timeMin=f"{date}T00:00:00Z",
-                timeMax=f"{date}T23:59:59Z",
-                q=event.get("title", ""),
-                singleEvents=True,
-            ).execute()
+            results = (
+                service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=f"{date}T00:00:00Z",
+                    timeMax=f"{date}T23:59:59Z",
+                    q=event.get("title", ""),
+                    singleEvents=True,
+                )
+                .execute()
+            )
 
             matches = results.get("items", [])
 
@@ -85,8 +107,7 @@ def delete_events(events: list) -> tuple[int, int]:
 
             for match in matches:
                 service.events().delete(
-                    calendarId="primary",
-                    eventId=match["id"]
+                    calendarId="primary", eventId=match["id"]
                 ).execute()
                 logger.info(f"Deleted: {match.get('summary')} on {date}")
                 deleted += 1

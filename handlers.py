@@ -31,7 +31,9 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.message.photo:
         file = await context.bot.get_file(update.message.photo[-1].file_id)
-    elif update.message.document and update.message.document.mime_type.startswith("image/"):
+    elif update.message.document and update.message.document.mime_type.startswith(
+        "image/"
+    ):
         file = await context.bot.get_file(update.message.document.file_id)
     else:
         await update.message.reply_text("Send an image of your schedule.")
@@ -44,7 +46,9 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         events = extract_events(image_bytes)
     except json.JSONDecodeError:
-        await update.message.reply_text("Couldn't parse the schedule. Try a clearer image.")
+        await update.message.reply_text(
+            "Couldn't parse the schedule. Try a clearer image."
+        )
         return
     except Exception as e:
         logger.error(f"Gemini error: {e}")
@@ -81,13 +85,15 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Found {len(events)} events:\n\n{event_list}\n\nAdding them now..."
         )
         try:
-            added, failed = add_events(events)
+            added, skipped, failed = add_events(events)
         except Exception as e:
             logger.error(f"Add error: {e}")
             await update.message.reply_text("Failed to connect to Google Calendar.")
             return
 
         msg = f"Added {added}/{len(events)} events to your calendar."
+        if skipped:
+            msg += f"\n{skipped} event(s) skipped as something already exists in that time slot."
         if failed:
             msg += f"\nFailed to add: {', '.join(failed)}"
         await update.message.reply_text(msg)
