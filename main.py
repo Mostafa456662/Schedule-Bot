@@ -18,8 +18,11 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(
-        MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image)
+        MessageHandler(
+            filters.PHOTO | filters.Document.IMAGE | filters.Document.PDF, handle_image
+        )
     )
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_non_image))
 
     app.run_polling()
