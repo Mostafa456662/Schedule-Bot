@@ -28,32 +28,53 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     mode = user_states.pop(chat_id, "add")
+    mime_type = "image/jpeg"  # default
 
     if update.message.photo:
         file = await context.bot.get_file(update.message.photo[-1].file_id)
-    elif update.message.document and update.message.document.mime_type.startswith(
-        "image/"
-    ):
-        file = await context.bot.get_file(update.message.document.file_id)
+
+    elif update.message.document:
+        doc = update.message.document
+        mime_type = doc.mime_type or "image/jpeg"
+
+        supported = {
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/heic",
+            "application/pdf",
+        }
+        if mime_type not in supported:
+            await update.message.reply_text(
+                "Unsupported file type. Send an image (JPEG, PNG, WEBP) or a PDF."
+            )
+            return
+
+        file = await context.bot.get_file(doc.file_id)
+
     else:
-        await update.message.reply_text("Send an image of your schedule.")
+        await update.message.reply_text("Send an image or PDF of your schedule.")
         return
 
     await update.message.reply_text("Got it, analyzing the schedule...")
 
-    image_bytes = bytes(await file.download_as_bytearray())
+    file_bytes = bytes(await file.download_as_bytearray())
 
     try:
-        events = extract_events(image_bytes)
+        events = extract_events(file_bytes, mime_type)
     except json.JSONDecodeError:
         await update.message.reply_text(
-            "Couldn't parse the schedule. Try a clearer image."
+            "Couldn't parse the schedule. Try a clearer file."
         )
+        return
+    except ValueError as e:
+        await update.message.reply_text(str(e))
         return
     except Exception as e:
         logger.error(f"Gemini error: {e}")
-        await update.message.reply_text("Something went wrong while reading the image.")
+        await update.message.reply_text("Something went wrong while reading the file.")
         return
+
 
     if not events:
         await update.message.reply_text("No events found. Try a clearer photo.")
