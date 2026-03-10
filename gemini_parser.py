@@ -89,7 +89,7 @@ def extract_events(file_bytes: bytes, mime_type: str) -> list:
             ]
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=contents,
         )
 

@@ -7,8 +7,30 @@ from calendar_service import add_events, delete_events
 
 logger = logging.getLogger(__name__)
 
-# tracks which users are in delete mode
 user_states: dict[int, str] = {}
+
+
+def chunk_message(text: str, max_length: int = 4000) -> list[str]:
+    lines = text.split("\n")
+    chunks = []
+    current = ""
+
+    for line in lines:
+        if len(current) + len(line) + 1 > max_length:
+            chunks.append(current)
+            current = line
+        else:
+            current += ("\n" if current else "") + line
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
+async def send_long_message(update: Update, text: str):
+    for chunk in chunk_message(text):
+        await update.message.reply_text(chunk)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -28,7 +50,7 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     mode = user_states.pop(chat_id, "add")
-    mime_type = "image/jpeg"  # default
+    mime_type = "image/jpeg"
 
     if update.message.photo:
         file = await context.bot.get_file(update.message.photo[-1].file_id)
@@ -75,7 +97,6 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Something went wrong while reading the file.")
         return
 
-
     if not events:
         await update.message.reply_text("No events found. Try a clearer photo.")
         return
@@ -86,9 +107,11 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if mode == "delete":
-        await update.message.reply_text(
-            f"Found {len(events)} events to delete:\n\n{event_list}\n\nRemoving them now..."
+        await send_long_message(
+            update, f"Found {len(events)} events to delete:\n\n{event_list}"
         )
+        await update.message.reply_text("Removing them now...")
+
         try:
             deleted, not_found = delete_events(events)
         except Exception as e:
@@ -102,9 +125,9 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(msg)
 
     else:
-        await update.message.reply_text(
-            f"Found {len(events)} events:\n\n{event_list}\n\nAdding them now..."
-        )
+        await send_long_message(update, f"Found {len(events)} events:\n\n{event_list}")
+        await update.message.reply_text("Adding them now...")
+
         try:
             added, skipped, failed = add_events(events)
         except Exception as e:
