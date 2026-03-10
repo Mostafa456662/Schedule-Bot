@@ -49,20 +49,34 @@ def extract_events(file_bytes: bytes, mime_type: str) -> list:
 
     try:
         if mime_type == "application/pdf":
-            # write to a temp file and upload via File API
-            # this avoids sending the raw bytes inline which times out on slow connections
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                tmp.write(file_bytes)
-                tmp_path = tmp.name
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp.write(file_bytes)
+                    tmp_path = tmp.name
 
-            logger.info(
-                f"Uploading PDF ({len(file_bytes)} bytes) to Gemini File API..."
-            )
-            uploaded = client.files.upload(file=tmp_path)
-            os.unlink(tmp_path)
-            logger.info(f"Upload done: {uploaded.name}")
+                logger.info(f"Uploading PDF ({len(file_bytes)} bytes)...")
+                uploaded = client.files.upload(
+                    file=tmp_path, config={"mime_type": "application/pdf"}
+                )
+                logger.info(f"Upload done: {uploaded.name}, waiting for processing...")
 
-            contents = [uploaded, prompt]
+                # wait for the file to be ready
+                import time
+
+                while uploaded.state.name == "PROCESSING":
+                    time.sleep(2)
+                    uploaded = client.files.get(name=uploaded.name)
+
+                if uploaded.state.name == "FAILED":
+                    raise ValueError("File processing failed on Gemini's side")
+
+                logger.info("File ready, sending to model...")
+                contents = [uploaded, prompt]
+
+            finally:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
 
         else:
             contents = [
@@ -75,7 +89,7 @@ def extract_events(file_bytes: bytes, mime_type: str) -> list:
             ]
 
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             contents=contents,
         )
 
